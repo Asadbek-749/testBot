@@ -59,12 +59,8 @@ async def start_test_for_topic(chat_id, topic, context: ContextTypes.DEFAULT_TYP
         await context.bot.send_message(chat_id=chat_id, text=f"'{topic}' mavzusida savollar topilmadi.")
         return
         
-    # Tasodifiy 10 ta (yoki borini) tanlaymiz
-    num_questions = min(10, len(questions))
-    selected_questions = random.sample(questions, num_questions)
-    
-    if len(questions) < 10:
-        await context.bot.send_message(chat_id=chat_id, text=f"Diqqat: Ushbu mavzuda faqat {len(questions)} ta savol bor, barchasi ishlatiladi.")
+    # Bor barcha savollarni tasodifiy tartibda aralashtirib beramiz
+    selected_questions = random.sample(questions, len(questions))
         
     # Testni fonga yuboramiz (asyncio.create_task)
     context.application.create_task(run_test_loop(chat_id, topic, selected_questions, context))
@@ -104,16 +100,55 @@ async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT
     rating = db.get_chat_rating(chat_id, topic)
     text = f"Test yakunlandi!\nMavzu: {topic}\n\nTop ishtirokchilar:\n"
     
+    top_user = None
+    top_score_text = ""
+    
     if not rating:
         text += "Hech kim qatnashmadi."
     else:
         for idx, row in enumerate(rating):
             # row: (username, correct_count, total_count)
             text += f"{idx+1}. {row[0] or 'NoName'} - {row[1]}/{row[2]}\n"
+            if idx == 0 and row[1] > 0:
+                top_user = row[0] or 'NoName'
+                top_score_text = f"{row[1]}/{row[2]}"
             if idx == 2: # Faqat top 3 ni ko'rsatamiz qisqacha reytingda
                 break
                 
     await context.bot.send_message(chat_id=chat_id, text=text)
+
+    # Agar g'olib bo'lsa (hech bo'lmasa bitta to'g'ri topgan bo'lsa), sertifikat beramiz
+    if top_user:
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            from io import BytesIO
+            
+            img = Image.new('RGB', (800, 600), color=(255, 250, 240))
+            d = ImageDraw.Draw(img)
+            
+            d.rectangle([20, 20, 780, 580], outline=(218, 165, 32), width=10)
+            d.rectangle([30, 30, 770, 570], outline=(218, 165, 32), width=2)
+            
+            try:
+                font_large = ImageFont.truetype("Roboto-Bold.ttf", 60)
+                font_med = ImageFont.truetype("Roboto-Bold.ttf", 40)
+                font_small = ImageFont.truetype("Roboto-Bold.ttf", 30)
+            except:
+                font_large = font_med = font_small = ImageFont.load_default()
+                
+            d.text((400, 150), "FAXRIIY YORLIQ", fill=(218, 165, 32), font=font_large, anchor="mm")
+            d.text((400, 250), "Ushbu yorliq", fill=(50, 50, 50), font=font_small, anchor="mm")
+            d.text((400, 320), top_user, fill=(0, 0, 100), font=font_large, anchor="mm")
+            d.text((400, 420), f"'{topic}' mavzusida {top_score_text} ball bilan\nbirinchi o'rinni egallagani uchun berildi.", fill=(50, 50, 50), font=font_med, anchor="mm", align="center")
+            
+            bio = BytesIO()
+            bio.name = 'sertifikat.jpg'
+            img.save(bio, 'JPEG')
+            bio.seek(0)
+            
+            await context.bot.send_photo(chat_id=chat_id, photo=bio, caption=f"🏆 Boshqalar uchun ham zo'r namuna, tabriklaymiz {top_user}!")
+        except Exception as e:
+            logger.error(f"Sertifikat yaratishda xatolik: {e}")
 
 async def poll_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     answer = update.poll_answer

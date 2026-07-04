@@ -5,6 +5,7 @@ from config import ADMIN_IDS
 import database as db
 import openpyxl
 from io import BytesIO
+import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,63 @@ async def import_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Excel o'qishda xatolik: {e}")
         await update.message.reply_text("Faylni o'qishda xatolik yuz berdi. Fayl strukturasi to'g'riligini tekshiring.")
+
+async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_admin(update):
+        return
+        
+    conn = db.get_connection()
+    c = conn.cursor()
+    db._execute(c, "SELECT COUNT(*) FROM questions")
+    q_count = c.fetchone()[0]
+    db._execute(c, "SELECT COUNT(DISTINCT user_id) FROM results")
+    u_count = c.fetchone()[0]
+    db._execute(c, "SELECT SUM(total_count) FROM results")
+    t_count = c.fetchone()[0] or 0
+    conn.close()
+    
+    text = f"📊 Bot statistikasi:\n\nJami savollar: {q_count} ta\nJami ishtirokchilar: {u_count} ta\nYechilgan testlar soni: {t_count} ta"
+    await update.message.reply_text(text)
+
+async def schedule_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_admin(update):
+        return
+        
+    if len(context.args) < 2:
+        await update.message.reply_text("Iltimos, mavzu va vaqtni kiriting. Masalan: /schedule_test Word 14:30")
+        return
+        
+    time_str = context.args[-1]
+    topic = " ".join(context.args[:-1])
+    
+    try:
+        hour, minute = map(int, time_str.split(':'))
+        now = datetime.datetime.now()
+        target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target_time < now:
+            target_time += datetime.timedelta(days=1)
+            
+        delay = (target_time - now).total_seconds()
+        
+        if not context.job_queue:
+            await update.message.reply_text("Tizimda JobQueue yoqilmagan. Dasturchiga murojaat qiling.")
+            return
+            
+        context.job_queue.run_once(
+            start_test_for_topic_job,
+            delay,
+            chat_id=update.effective_chat.id,
+            data={'topic': topic, 'chat_id': update.effective_chat.id}
+        )
+        await update.message.reply_text(f"✅ Tayyor! '{topic}' mavzusi uchun test {time_str} da avtomatik boshlanadi.")
+    except Exception as e:
+        logger.error(e)
+        await update.message.reply_text("Vaqt xato kiritildi. Masalan: 14:30")
+
+async def start_test_for_topic_job(context: ContextTypes.DEFAULT_TYPE):
+    from handlers.test import start_test_for_topic
+    job = context.job
+    await start_test_for_topic(job.data['chat_id'], job.data['topic'], context)
 
 
 add_question_handler = ConversationHandler(
