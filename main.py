@@ -33,8 +33,6 @@ def main():
     application.add_handler(CommandHandler('stats', admin_stats))
     application.add_handler(CommandHandler('schedule_test', schedule_test))
     application.add_handler(MessageHandler(filters.Document.ALL, import_excel))
-    application.add_handler(CommandHandler("addadmin", add_admin_command))
-    application.add_handler(CommandHandler("deladmin", del_admin_command))
 
     # Test buyruqlari
     application.add_handler(CommandHandler('test', start_test_command))
