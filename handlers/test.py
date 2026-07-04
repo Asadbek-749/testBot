@@ -47,12 +47,15 @@ async def topic_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await query.answer()
     
-    data = query.data
-    if data.startswith("topic_"):
-        topic = data.replace("topic_", "", 1)
-        await query.edit_message_text(f"'{topic}' mavzusi tanlandi. Test boshlanmoqda...")
-        thread_id = query.message.message_thread_id
-        await start_test_for_topic(query.message.chat_id, topic, context, thread_id)
+    try:
+        data = query.data
+        if data.startswith("topic_"):
+            topic = data.replace("topic_", "", 1)
+            await query.edit_message_text(f"'{topic}' mavzusi tanlandi. Test boshlanmoqda...")
+            thread_id = query.message.message_thread_id
+            await start_test_for_topic(query.message.chat_id, topic, context, thread_id)
+    except Exception as e:
+        await context.bot.send_message(chat_id=query.message.chat_id, text=f"Callback Xato: {str(e)}")
 
 async def start_test_for_topic(chat_id, topic, context: ContextTypes.DEFAULT_TYPE, thread_id=None):
     questions = db.get_questions_by_topic(topic)
@@ -67,156 +70,142 @@ async def start_test_for_topic(chat_id, topic, context: ContextTypes.DEFAULT_TYP
     context.application.create_task(run_test_loop(chat_id, topic, selected_questions, context, thread_id))
 
 async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT_TYPE, thread_id=None):
-    poll_message_ids = []
-    
-    for i, q in enumerate(questions):
-        # q = (id, text, option1, option2, option3, correct_option)
-        q_id, q_text, opt1, opt2, opt3, correct_idx = q
-        options = [opt1, opt2, opt3]
+    try:
+        poll_message_ids = []
         
-        msg = await context.bot.send_poll(
-            chat_id=chat_id,
-            message_thread_id=thread_id,
-            question=f"[{i+1}/{len(questions)}] {q_text}",
-            options=options,
-            type="quiz",
-            correct_option_id=correct_idx,
-            is_anonymous=False,
-            open_period=20
-        )
-        
-        poll_message_ids.append(msg.message_id)
-        poll_id = msg.poll.id
-        db.add_active_poll(poll_id, chat_id, q_id, correct_idx)
-        
-        # Keyingi savolgacha 20 soniya kutamiz
-        await asyncio.sleep(20)
-        
-        # Test muddati tugagach poll yopib qo'yilishi mumkin, lekin API orqali poll stop qilsa bo'ladi:
-        try:
-            await context.bot.stop_poll(chat_id, msg.message_id)
-        except Exception as e:
-            logger.warning(f"Poll stop qilishda xatolik: {e}")
+        for i, q in enumerate(questions):
+            q_id, q_text, opt1, opt2, opt3, correct_idx = q
+            options = [opt1, opt2, opt3]
             
-        # Bazadan olib tashlaymiz
-        db.remove_active_poll(poll_id)
-        
-    # Test tugagach qisqacha reyting chiqaramiz
-    rating = db.get_chat_rating(chat_id, topic)
-    text = f"Test yakunlandi!\nMavzu: {topic}\n\nTop ishtirokchilar:\n"
-    
-    top_user = None
-    top_score_text = ""
-    
-    if not rating:
-        text += "Hech kim qatnashmadi."
-    else:
-        for idx, row in enumerate(rating):
-            # row: (username, correct_count, total_count)
-            text += f"{idx+1}. {row[0] or 'NoName'} - {row[1]}/{row[2]}\n"
-            if idx == 0 and row[1] > 0:
-                top_user = row[0] or 'NoName'
-                top_score_text = f"{row[1]}/{row[2]}"
-            if idx == 2: # Faqat top 3 ni ko'rsatamiz qisqacha reytingda
-                break
-                
-    await context.bot.send_message(chat_id=chat_id, message_thread_id=thread_id, text=text)
-
-    # Agar g'olib bo'lsa (hech bo'lmasa bitta to'g'ri topgan bo'lsa), sertifikat beramiz
-    if top_user:
-        try:
-            from PIL import Image, ImageDraw, ImageFont
-            from io import BytesIO
-            import urllib.request
-            import os
-            import textwrap
+            msg = await context.bot.send_poll(
+                chat_id=chat_id,
+                message_thread_id=thread_id,
+                question=f"[{i+1}/{len(questions)}] {q_text}",
+                options=options,
+                type="quiz",
+                correct_option_id=correct_idx,
+                is_anonymous=False,
+                open_period=20
+            )
             
-            # Fontni tekshirish va yuklash (Railway'da yo'q bo'lsa avtomat tortib oladi)
-            font_path = "Roboto-Bold.ttf"
-            if not os.path.exists(font_path):
-                try:
-                    url = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf"
-                    urllib.request.urlretrieve(url, font_path)
-                except Exception as e:
-                    logger.error(f"Font yuklashda xato: {e}")
+            poll_message_ids.append(msg.message_id)
+            poll_id = msg.poll.id
+            db.add_active_poll(poll_id, chat_id, q_id, correct_idx)
             
-            # Sablon (template.jpg) dan foydalanamiz, agar bo'lmasa o'zimiz chizamiz
-            template_path = "template.jpg"
+            await asyncio.sleep(20)
             
-            # To'g'ri shriftni majburiy yuklab olish (Git orqali buzilmasligi uchun)
-            font_clean = "font_clean.ttf"
-            if not os.path.exists(font_clean):
-                try:
-                    url = "https://github.com/googlefonts/opensans/raw/main/fonts/ttf/OpenSans-Bold.ttf"
-                    urllib.request.urlretrieve(url, font_clean)
-                except Exception as e:
-                    logger.error(f"Shrift yuklashda xato: {e}")
-            
-            if os.path.exists(template_path):
-                img = Image.open(template_path).convert('RGB')
-                d = ImageDraw.Draw(img)
-                width, height = img.size
-                
-                # Markazdagi AI yozgan xato matnlarni (tofu) fil suyagi (cream) to'rtburchak bilan yopish
-                center_rect = [width*0.15, height*0.22, width*0.85, height*0.65]
-                d.rectangle(center_rect, fill=(253, 250, 240))
-                
-                # Pastki ma'lumotlar joyidagi noto'g'ri yozuvlarni ham ochroq fon bilan yopish
-                d.rectangle([width*0.15, height*0.68, width*0.85, height*0.82], fill=(253, 250, 240))
-                
-            else:
-                img = Image.new('RGB', (1000, 700), color=(253, 250, 240))
-                d = ImageDraw.Draw(img)
-                d.rectangle([30, 30, 970, 670], outline=(212, 175, 55), width=15)
-                width, height = 1000, 700
-            
-            # Shriftlarni sozlash
             try:
-                font_title = ImageFont.truetype(font_clean, int(height*0.09))
-                font_name = ImageFont.truetype(font_clean, int(height*0.11))
-                font_text = ImageFont.truetype(font_clean, int(height*0.035))
-                font_small = ImageFont.truetype(font_clean, int(height*0.03))
-            except:
-                font_title = font_name = font_text = font_small = ImageFont.load_default()
+                await context.bot.stop_poll(chat_id, msg.message_id)
+            except Exception as e:
+                logger.warning(f"Poll stop qilishda xatolik: {e}")
                 
-            # Matnlarni chizish (To'q ko'k va Tilla ranglarda)
-            d.text((width/2, height*0.28), "SERTIFIKAT", fill=(212, 175, 55), font=font_title, anchor="mm")
-            d.text((width/2, height*0.37), "Ushbu sertifikat", fill=(26, 43, 76), font=font_text, anchor="mm")
+            db.remove_active_poll(poll_id)
             
-            d.text((width/2, height*0.48), top_user, fill=(212, 175, 55), font=font_name, anchor="mm")
-            
-            desc_text = f"«{topic}» testini muvaffaqiyatli yechib,\n1-o'rinni egallaganingiz uchun taqdim etiladi."
-            d.text((width/2, height*0.58), desc_text, fill=(26, 43, 76), font=font_text, anchor="mm", align="center")
-            
-            # Natija, Sana, O'rin
-            import datetime
-            date_str = datetime.datetime.now().strftime("%d.%m.%Y")
-            
-            d.text((width*0.3, height*0.72), "NATIJA", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
-            d.text((width*0.3, height*0.77), f"{top_score_text}", fill=(212, 175, 55), font=font_text, anchor="mm", align="center")
-            
-            d.text((width*0.5, height*0.72), "SANA", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
-            d.text((width*0.5, height*0.77), f"{date_str}", fill=(212, 175, 55), font=font_text, anchor="mm", align="center")
-            
-            d.text((width*0.7, height*0.72), "O'RIN", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
-            d.text((width*0.7, height*0.77), "1-O'RIN", fill=(212, 175, 55), font=font_text, anchor="mm", align="center")
-            
-            bio = BytesIO()
-            bio.name = 'sertifikat.jpg'
-            img.save(bio, 'JPEG')
-            bio.seek(0)
-            
-            await context.bot.send_photo(chat_id=chat_id, message_thread_id=thread_id, photo=bio, caption=f"🏆 Boshqalar uchun ham zo'r namuna, tabriklaymiz {top_user}!")
-        except Exception as e:
-            logger.error(f"Sertifikat yaratishda xatolik: {e}")
-            
-    # 2 daqiqadan so'ng barcha test xabarlarini o'chirib yuborish
-    if context.job_queue:
-        context.job_queue.run_once(
-            delete_polls_job,
-            120,
-            data={'chat_id': chat_id, 'message_ids': poll_message_ids}
-        )
+        rating = db.get_chat_rating(chat_id, topic)
+        text = f"Test yakunlandi!\nMavzu: {topic}\n\nTop ishtirokchilar:\n"
+        
+        top_user = None
+        top_score_text = ""
+        
+        if not rating:
+            text += "Hech kim qatnashmadi."
+        else:
+            for idx, row in enumerate(rating):
+                text += f"{idx+1}. {row[0] or 'NoName'} - {row[1]}/{row[2]}\n"
+                if idx == 0 and row[1] > 0:
+                    top_user = row[0] or 'NoName'
+                    top_score_text = f"{row[1]}/{row[2]}"
+                if idx == 2:
+                    break
+                    
+        await context.bot.send_message(chat_id=chat_id, message_thread_id=thread_id, text=text)
+    
+        if top_user:
+            try:
+                from PIL import Image, ImageDraw, ImageFont
+                from io import BytesIO
+                import urllib.request
+                import os
+                
+                font_path = "Roboto-Bold.ttf"
+                if not os.path.exists(font_path):
+                    try:
+                        url = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf"
+                        urllib.request.urlretrieve(url, font_path)
+                    except Exception as e:
+                        pass
+                
+                template_path = "template.jpg"
+                
+                font_clean = "font_clean.ttf"
+                if not os.path.exists(font_clean):
+                    try:
+                        url = "https://github.com/googlefonts/opensans/raw/main/fonts/ttf/OpenSans-Bold.ttf"
+                        urllib.request.urlretrieve(url, font_clean)
+                    except Exception as e:
+                        pass
+                
+                if os.path.exists(template_path):
+                    img = Image.open(template_path).convert('RGB')
+                    d = ImageDraw.Draw(img)
+                    width, height = img.size
+                    
+                    center_rect = [width*0.15, height*0.22, width*0.85, height*0.65]
+                    d.rectangle(center_rect, fill=(253, 250, 240))
+                    
+                    d.rectangle([width*0.15, height*0.68, width*0.85, height*0.82], fill=(253, 250, 240))
+                    
+                else:
+                    img = Image.new('RGB', (1000, 700), color=(253, 250, 240))
+                    d = ImageDraw.Draw(img)
+                    d.rectangle([30, 30, 970, 670], outline=(212, 175, 55), width=15)
+                    width, height = 1000, 700
+                
+                try:
+                    font_title = ImageFont.truetype(font_clean, int(height*0.09))
+                    font_name = ImageFont.truetype(font_clean, int(height*0.11))
+                    font_text = ImageFont.truetype(font_clean, int(height*0.035))
+                    font_small = ImageFont.truetype(font_clean, int(height*0.03))
+                except:
+                    font_title = font_name = font_text = font_small = ImageFont.load_default()
+                    
+                d.text((width/2, height*0.28), "SERTIFIKAT", fill=(212, 175, 55), font=font_title, anchor="mm")
+                d.text((width/2, height*0.37), "Ushbu sertifikat", fill=(26, 43, 76), font=font_text, anchor="mm")
+                
+                d.text((width/2, height*0.48), top_user, fill=(212, 175, 55), font=font_name, anchor="mm")
+                
+                desc_text = f"«{topic}» testini muvaffaqiyatli yechib,\n1-o'rinni egallaganingiz uchun taqdim etiladi."
+                d.text((width/2, height*0.58), desc_text, fill=(26, 43, 76), font=font_text, anchor="mm", align="center")
+                
+                import datetime
+                date_str = datetime.datetime.now().strftime("%d.%m.%Y")
+                
+                d.text((width*0.3, height*0.72), "NATIJA", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
+                d.text((width*0.3, height*0.77), f"{top_score_text}", fill=(212, 175, 55), font=font_text, anchor="mm", align="center")
+                
+                d.text((width*0.5, height*0.72), "SANA", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
+                d.text((width*0.5, height*0.77), f"{date_str}", fill=(212, 175, 55), font=font_text, anchor="mm", align="center")
+                
+                d.text((width*0.7, height*0.72), "O'RIN", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
+                d.text((width*0.7, height*0.77), "1-O'RIN", fill=(212, 175, 55), font=font_text, anchor="mm", align="center")
+                
+                bio = BytesIO()
+                bio.name = 'sertifikat.jpg'
+                img.save(bio, 'JPEG')
+                bio.seek(0)
+                
+                await context.bot.send_photo(chat_id=chat_id, message_thread_id=thread_id, photo=bio, caption=f"🏆 Boshqalar uchun ham zo'r namuna, tabriklaymiz {top_user}!")
+            except Exception as e:
+                await context.bot.send_message(chat_id=chat_id, text=f"Sertifikat xato: {str(e)}")
+                
+        if context.job_queue:
+            context.job_queue.run_once(
+                delete_polls_job,
+                120,
+                data={'chat_id': chat_id, 'message_ids': poll_message_ids}
+            )
+    except Exception as e:
+        await context.bot.send_message(chat_id=chat_id, text=f"Test Loop Xato: {str(e)}")
 
 async def delete_polls_job(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
