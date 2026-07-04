@@ -38,24 +38,33 @@ async def start_test_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text("Qaysi mavzuda test o'tkazmoqchisiz?", reply_markup=reply_markup)
 
 async def topic_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    
-    # Faqat admin bosa oladimi yoki ixtiyoriy kishimi? Faqat admin test boshlay olishini ta'minlash uchun:
-    if not db.is_admin(query.from_user.id):
-        await query.answer("Sizda test boshlash uchun ruxsat yo'q.", show_alert=True)
-        return
-        
-    await query.answer()
-    
     try:
+        query = update.callback_query
+        
+        # Faqat admin bosa oladimi yoki ixtiyoriy kishimi?
+        if not db.is_admin(query.from_user.id):
+            await query.answer("Sizda test boshlash uchun ruxsat yo'q.", show_alert=True)
+            return
+            
+        await query.answer()
+        
         data = query.data
         if data.startswith("topic_"):
             topic = data.replace("topic_", "", 1)
-            await query.edit_message_text(f"'{topic}' mavzusi tanlandi. Test boshlanmoqda...")
+            
+            # 5 soniya sanash
+            await query.edit_message_text(f"'{topic}' mavzusi tanlandi.\nTest boshlanishiga: 5 soniya...")
+            for i in range(4, 0, -1):
+                await asyncio.sleep(1)
+                await query.edit_message_text(f"'{topic}' mavzusi tanlandi.\nTest boshlanishiga: {i} soniya...")
+            await asyncio.sleep(1)
+            await query.edit_message_text(f"'{topic}' mavzusi bo'yicha test boshlandi! Omad!")
+            
             thread_id = query.message.message_thread_id
             await start_test_for_topic(query.message.chat_id, topic, context, thread_id)
     except Exception as e:
-        await context.bot.send_message(chat_id=query.message.chat_id, text=f"Callback Xato: {str(e)}")
+        if update.callback_query and update.callback_query.message:
+            await context.bot.send_message(chat_id=update.callback_query.message.chat_id, text=f"FULL Callback Xato: {str(e)}")
 
 async def start_test_for_topic(chat_id, topic, context: ContextTypes.DEFAULT_TYPE, thread_id=None):
     questions = db.get_questions_by_topic(topic)
