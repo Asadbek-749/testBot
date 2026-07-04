@@ -1,26 +1,13 @@
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, PollAnswerHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, PollAnswerHandler, MessageHandler, filters
 from config import BOT_TOKEN
 import database as db
 
 from handlers.admin import (
-    add_question_handler, list_questions, delete_question, import_excel, admin_stats, schedule_test,
-    add_admin_command, del_admin_command
+    add_question_handler, list_questions, delete_question, import_excel, admin_stats, schedule_test
 )
 from handlers.test import start_test_command, topic_callback, poll_answer_handler
 from handlers.stats import mystats, rating, rating_callback
-
-async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Ping! Bot yangilangan va ishlamoqda. (Versiya: 3.0)")
-
-async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(msg="Exception while handling an update:", exc_info=context.error)
-    if isinstance(update, Update) and update.effective_chat:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"Global xato ushlandi: {str(context.error)}"
-        )
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -51,8 +38,7 @@ def main():
 
     # Test buyruqlari
     application.add_handler(CommandHandler('test', start_test_command))
-    application.add_handler(CommandHandler('ping', ping_command))
-    application.add_handler(CallbackQueryHandler(topic_callback))
+    application.add_handler(CallbackQueryHandler(topic_callback, pattern="^topic_"))
     application.add_handler(PollAnswerHandler(poll_answer_handler))
 
     # Statistika buyruqlari
@@ -61,7 +47,6 @@ def main():
     application.add_handler(CallbackQueryHandler(rating_callback, pattern="^rating_"))
 
     logger.info("Bot ishga tushmoqda...")
-    application.add_error_handler(global_error_handler)
     application.run_polling()
 
 if __name__ == '__main__':

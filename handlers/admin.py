@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 ASK_TEXT, ASK_OPT1, ASK_OPT2, ASK_OPT3, ASK_CORRECT, ASK_TOPIC = range(6)
 
 async def check_admin(update: Update) -> bool:
-    if not db.is_admin(update.effective_user.id):
+    if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("Kechirasiz, sizda bu amalni bajarish uchun admin huquqi yo'q.")
         return False
     return True
@@ -127,38 +127,6 @@ async def delete_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"ID {q_id} bo'lgan savol o'chirildi.")
     else:
         await update.message.reply_text("Bunday ID ga ega savol topilmadi.")
-
-async def add_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from config import ADMIN_IDS
-    if update.effective_user.id not in ADMIN_IDS:
-        await update.message.reply_text("Sizda boshqalarni admin qilish huquqi yo'q (faqat Asosiy Admin qila oladi).")
-        return
-        
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Kimgadir ruxsat berish uchun, uning biror xabariga 'Reply' qilib /addadmin deb yozing.")
-        return
-        
-    new_admin_id = update.message.reply_to_message.from_user.id
-    name = update.message.reply_to_message.from_user.first_name or "Foydalanuvchi"
-    
-    db.add_admin(new_admin_id)
-    await update.message.reply_text(f"✅ {name} endi testlarni boshlash huquqiga ega!")
-
-async def del_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from config import ADMIN_IDS
-    if update.effective_user.id not in ADMIN_IDS:
-        await update.message.reply_text("Sizda bu huquq yo'q.")
-        return
-        
-    if not update.message.reply_to_message:
-        await update.message.reply_text("Ruxsatni olish uchun uning xabariga 'Reply' qilib /deladmin yozing.")
-        return
-        
-    target_id = update.message.reply_to_message.from_user.id
-    name = update.message.reply_to_message.from_user.first_name or "Foydalanuvchi"
-    
-    db.remove_admin(target_id)
-    await update.message.reply_text(f"❌ {name} dan test boshlash huquqi olib tashlandi.")
 
 async def import_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_admin(update):

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 async def start_test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Faqat adminlar sinovni boshlashi mumkin
-    if not db.is_admin(update.effective_user.id):
+    if update.effective_user.id not in ADMIN_IDS:
         await update.message.reply_text("Sizda bu buyruqni ishlatish uchun ruxsat yo'q. Faqatgina adminlar testni boshlay oladi.")
         return
 
@@ -38,27 +38,24 @@ async def start_test_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text("Qaysi mavzuda test o'tkazmoqchisiz?", reply_markup=reply_markup)
 
 async def topic_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        query = update.callback_query
-        await query.answer()
+    query = update.callback_query
+    
+    # Faqat admin test boshlay olishini ta'minlash:
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("Sizda test boshlash uchun ruxsat yo'q.", show_alert=True)
+        return
         
-        if not query.data or not query.data.startswith("topic_"):
-            return
-            
-        topic = query.data.replace("topic_", "", 1)
-        
-        chat_id = query.message.chat.id if query.message else update.effective_chat.id
-        thread_id = getattr(query.message, 'message_thread_id', None) if query.message else None
-        
+    await query.answer()
+    
+    data = query.data
+    if data.startswith("topic_"):
+        topic = data.replace("topic_", "", 1)
         await query.edit_message_text(f"'{topic}' mavzusi tanlandi. Test boshlanmoqda...")
         
-        await start_test_for_topic(chat_id, topic, context, thread_id)
+        # Guruh bo'limlarini qo'llab-quvvatlash uchun thread_id (agar bo'lsa)
+        thread_id = getattr(query.message, 'message_thread_id', None) if query.message else None
         
-    except Exception as e:
-        import traceback
-        err_text = f"Callback Xato:\n{traceback.format_exc()}"
-        if update.effective_chat:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=err_text[:4000])
+        await start_test_for_topic(query.message.chat_id, topic, context, thread_id)
 
 async def start_test_for_topic(chat_id, topic, context: ContextTypes.DEFAULT_TYPE, thread_id=None):
     questions = db.get_questions_by_topic(topic)
