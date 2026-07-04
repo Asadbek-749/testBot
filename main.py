@@ -39,7 +39,7 @@ def main():
 
     # Test buyruqlari
     application.add_handler(CommandHandler('test', start_test_command))
-    application.add_handler(CallbackQueryHandler(topic_callback, pattern="^topic_"))
+    application.add_handler(CallbackQueryHandler(topic_callback))
     application.add_handler(PollAnswerHandler(poll_answer_handler))
 
     # Statistika buyruqlari

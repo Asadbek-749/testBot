@@ -41,6 +41,10 @@ async def topic_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
         
+        # Boshqa callbacklarni chetlab o'tish (masalan rating_)
+        if not query.data.startswith("topic_"):
+            return
+            
         # Tugma bosilganini darhol foydalanuvchiga xabar beramiz
         await context.bot.send_message(chat_id=query.message.chat_id, text="DEBUG: Tugma bosilgani aniqlandi! Kod ishlamoqda...")
         
