@@ -66,6 +66,8 @@ async def start_test_for_topic(chat_id, topic, context: ContextTypes.DEFAULT_TYP
     context.application.create_task(run_test_loop(chat_id, topic, selected_questions, context))
 
 async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT_TYPE):
+    poll_message_ids = []
+    
     for i, q in enumerate(questions):
         # q = (id, text, option1, option2, option3, correct_option)
         q_id, q_text, opt1, opt2, opt3, correct_idx = q
@@ -81,6 +83,7 @@ async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT
             open_period=20
         )
         
+        poll_message_ids.append(msg.message_id)
         poll_id = msg.poll.id
         db.add_active_poll(poll_id, chat_id, q_id, correct_idx)
         
@@ -122,24 +125,50 @@ async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT
         try:
             from PIL import Image, ImageDraw, ImageFont
             from io import BytesIO
+            import urllib.request
+            import os
+            import textwrap
             
-            img = Image.new('RGB', (800, 600), color=(255, 250, 240))
-            d = ImageDraw.Draw(img)
+            # Fontni tekshirish va yuklash (Railway'da yo'q bo'lsa avtomat tortib oladi)
+            font_path = "Roboto-Bold.ttf"
+            if not os.path.exists(font_path):
+                try:
+                    url = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf"
+                    urllib.request.urlretrieve(url, font_path)
+                except Exception as e:
+                    logger.error(f"Font yuklashda xato: {e}")
             
-            d.rectangle([20, 20, 780, 580], outline=(218, 165, 32), width=10)
-            d.rectangle([30, 30, 770, 570], outline=(218, 165, 32), width=2)
+            # Sablon (template.jpg) dan foydalanamiz, agar bo'lmasa o'zimiz chizamiz
+            template_path = "template.jpg"
+            if os.path.exists(template_path):
+                img = Image.open(template_path).convert('RGB')
+                d = ImageDraw.Draw(img)
+                # Markazdagi eski yozuvlarni qoplash (agar AI noto'g'ri yozgan bo'lsa)
+                # To'q ko'k rangda to'rtburchak tortib yuboramiz
+                width, height = img.size
+                center_rect = [width*0.2, height*0.35, width*0.8, height*0.75]
+                d.rectangle(center_rect, fill=(26, 43, 76, 230))
+            else:
+                img = Image.new('RGB', (1000, 700), color=(26, 43, 76))
+                d = ImageDraw.Draw(img)
+                d.rectangle([30, 30, 970, 670], outline=(212, 175, 55), width=15)
+                d.rectangle([45, 45, 955, 655], outline=(212, 175, 55), width=3)
+                width, height = 1000, 700
             
+            # Shriftlarni sozlash
             try:
-                font_large = ImageFont.truetype("Roboto-Bold.ttf", 60)
-                font_med = ImageFont.truetype("Roboto-Bold.ttf", 40)
-                font_small = ImageFont.truetype("Roboto-Bold.ttf", 30)
+                font_title = ImageFont.truetype(font_path, int(height*0.09))
+                font_name = ImageFont.truetype(font_path, int(height*0.1))
+                font_text = ImageFont.truetype(font_path, int(height*0.05))
             except:
-                font_large = font_med = font_small = ImageFont.load_default()
+                font_title = font_name = font_text = ImageFont.load_default()
                 
-            d.text((400, 150), "FAXRIIY YORLIQ", fill=(218, 165, 32), font=font_large, anchor="mm")
-            d.text((400, 250), "Ushbu yorliq", fill=(50, 50, 50), font=font_small, anchor="mm")
-            d.text((400, 320), top_user, fill=(0, 0, 100), font=font_large, anchor="mm")
-            d.text((400, 420), f"'{topic}' mavzusida {top_score_text} ball bilan\nbirinchi o'rinni egallagani uchun berildi.", fill=(50, 50, 50), font=font_med, anchor="mm", align="center")
+            # Matnlarni chizish
+            d.text((width/2, height*0.4), "FAXRIY YORLIQ", fill=(212, 175, 55), font=font_title, anchor="mm")
+            d.text((width/2, height*0.52), top_user, fill=(255, 255, 255), font=font_name, anchor="mm")
+            
+            desc_text = f"'{topic}' mavzusida {top_score_text} ball bilan\nbirinchi o'rinni egallagani uchun taqdirlandi."
+            d.text((width/2, height*0.68), desc_text, fill=(200, 200, 200), font=font_text, anchor="mm", align="center")
             
             bio = BytesIO()
             bio.name = 'sertifikat.jpg'
@@ -149,6 +178,25 @@ async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT
             await context.bot.send_photo(chat_id=chat_id, photo=bio, caption=f"🏆 Boshqalar uchun ham zo'r namuna, tabriklaymiz {top_user}!")
         except Exception as e:
             logger.error(f"Sertifikat yaratishda xatolik: {e}")
+            
+    # 2 daqiqadan so'ng barcha test xabarlarini o'chirib yuborish
+    if context.job_queue:
+        context.job_queue.run_once(
+            delete_polls_job,
+            120,
+            data={'chat_id': chat_id, 'message_ids': poll_message_ids}
+        )
+
+async def delete_polls_job(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    chat_id = job.data['chat_id']
+    message_ids = job.data['message_ids']
+    
+    for msg_id in message_ids:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except Exception:
+            pass
 
 async def poll_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     answer = update.poll_answer
