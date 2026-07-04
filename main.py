@@ -1,5 +1,6 @@
 import logging
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, PollAnswerHandler, MessageHandler, filters
+from telegram import Update
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, PollAnswerHandler, MessageHandler, filters, ContextTypes
 from config import BOT_TOKEN
 import database as db
 
@@ -9,6 +10,9 @@ from handlers.admin import (
 )
 from handlers.test import start_test_command, topic_callback, poll_answer_handler
 from handlers.stats import mystats, rating, rating_callback
+
+async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Ping! Bot yangilangan va ishlamoqda. (Versiya: 3.0)")
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -39,6 +43,7 @@ def main():
 
     # Test buyruqlari
     application.add_handler(CommandHandler('test', start_test_command))
+    application.add_handler(CommandHandler('ping', ping_command))
     application.add_handler(CallbackQueryHandler(topic_callback))
     application.add_handler(PollAnswerHandler(poll_answer_handler))
 
