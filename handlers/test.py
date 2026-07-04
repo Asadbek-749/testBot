@@ -81,7 +81,8 @@ async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT
             options=options,
             type="quiz",
             correct_option_id=correct_idx,
-            is_anonymous=False
+            is_anonymous=False,
+            open_period=20
         )
         
         poll_id = msg.poll.id
