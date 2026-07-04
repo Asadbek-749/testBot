@@ -21,7 +21,7 @@ async def start_test_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Agar /test <mavzu> yozilgan bo'lsa
     if context.args:
         topic = " ".join(context.args)
-        await start_test_for_topic(update.effective_chat.id, topic, context)
+        await start_test_for_topic(update.effective_chat.id, topic, context, update.message.message_thread_id)
         return
         
     topics = db.get_topics()
@@ -51,21 +51,22 @@ async def topic_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("topic_"):
         topic = data.replace("topic_", "", 1)
         await query.edit_message_text(f"'{topic}' mavzusi tanlandi. Test boshlanmoqda...")
-        await start_test_for_topic(query.message.chat_id, topic, context)
+        thread_id = query.message.message_thread_id
+        await start_test_for_topic(query.message.chat_id, topic, context, thread_id)
 
-async def start_test_for_topic(chat_id, topic, context: ContextTypes.DEFAULT_TYPE):
+async def start_test_for_topic(chat_id, topic, context: ContextTypes.DEFAULT_TYPE, thread_id=None):
     questions = db.get_questions_by_topic(topic)
     if not questions:
-        await context.bot.send_message(chat_id=chat_id, text=f"'{topic}' mavzusida savollar topilmadi.")
+        await context.bot.send_message(chat_id=chat_id, message_thread_id=thread_id, text=f"'{topic}' mavzusida savollar topilmadi.")
         return
         
     # Bor barcha savollarni tasodifiy tartibda aralashtirib beramiz
     selected_questions = random.sample(questions, len(questions))
         
     # Testni fonga yuboramiz (asyncio.create_task)
-    context.application.create_task(run_test_loop(chat_id, topic, selected_questions, context))
+    context.application.create_task(run_test_loop(chat_id, topic, selected_questions, context, thread_id))
 
-async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT_TYPE):
+async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT_TYPE, thread_id=None):
     poll_message_ids = []
     
     for i, q in enumerate(questions):
@@ -75,6 +76,7 @@ async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT
         
         msg = await context.bot.send_poll(
             chat_id=chat_id,
+            message_thread_id=thread_id,
             question=f"[{i+1}/{len(questions)}] {q_text}",
             options=options,
             type="quiz",
@@ -118,7 +120,7 @@ async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT
             if idx == 2: # Faqat top 3 ni ko'rsatamiz qisqacha reytingda
                 break
                 
-    await context.bot.send_message(chat_id=chat_id, text=text)
+    await context.bot.send_message(chat_id=chat_id, message_thread_id=thread_id, text=text)
 
     # Agar g'olib bo'lsa (hech bo'lmasa bitta to'g'ri topgan bo'lsa), sertifikat beramiz
     if top_user:
@@ -155,18 +157,15 @@ async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT
                 d = ImageDraw.Draw(img)
                 width, height = img.size
                 
-                # Markazdagi AI yozgan xato matnlarni (tofu) oq to'rtburchak bilan yopish
-                center_rect = [width*0.15, height*0.25, width*0.85, height*0.75]
-                d.rectangle(center_rect, fill=(255, 255, 255))
+                # Markazdagi AI yozgan xato matnlarni (tofu) fil suyagi (cream) to'rtburchak bilan yopish
+                center_rect = [width*0.15, height*0.22, width*0.85, height*0.65]
+                d.rectangle(center_rect, fill=(253, 250, 240))
                 
-                # Pastki chapdagi {{ADMIN_SIGNATURE}} ni oq bilan yopish
-                d.rectangle([width*0.05, height*0.75, width*0.35, height*0.95], fill=(255, 255, 255))
-                
-                # Pastki o'ngdagi {{CERTIFICATE_ID}} ni oq bilan yopish
-                d.rectangle([width*0.7, height*0.75, width*0.95, height*0.95], fill=(255, 255, 255))
+                # Pastki ma'lumotlar joyidagi noto'g'ri yozuvlarni ham ochroq fon bilan yopish
+                d.rectangle([width*0.15, height*0.68, width*0.85, height*0.82], fill=(253, 250, 240))
                 
             else:
-                img = Image.new('RGB', (1000, 700), color=(255, 255, 255))
+                img = Image.new('RGB', (1000, 700), color=(253, 250, 240))
                 d = ImageDraw.Draw(img)
                 d.rectangle([30, 30, 970, 670], outline=(212, 175, 55), width=15)
                 width, height = 1000, 700
@@ -174,35 +173,40 @@ async def run_test_loop(chat_id, topic, questions, context: ContextTypes.DEFAULT
             # Shriftlarni sozlash
             try:
                 font_title = ImageFont.truetype(font_clean, int(height*0.09))
-                font_name = ImageFont.truetype(font_clean, int(height*0.1))
-                font_text = ImageFont.truetype(font_clean, int(height*0.04))
+                font_name = ImageFont.truetype(font_clean, int(height*0.11))
+                font_text = ImageFont.truetype(font_clean, int(height*0.035))
                 font_small = ImageFont.truetype(font_clean, int(height*0.03))
             except:
                 font_title = font_name = font_text = font_small = ImageFont.load_default()
                 
             # Matnlarni chizish (To'q ko'k va Tilla ranglarda)
-            d.text((width/2, height*0.35), "FAXRIY YORLIQ", fill=(212, 175, 55), font=font_title, anchor="mm")
+            d.text((width/2, height*0.28), "SERTIFIKAT", fill=(212, 175, 55), font=font_title, anchor="mm")
+            d.text((width/2, height*0.37), "Ushbu sertifikat", fill=(26, 43, 76), font=font_text, anchor="mm")
             
-            d.text((width/2, height*0.5), top_user, fill=(26, 43, 76), font=font_name, anchor="mm")
+            d.text((width/2, height*0.48), top_user, fill=(212, 175, 55), font=font_name, anchor="mm")
             
-            desc_text = f"'{topic}' mavzusida {top_score_text} ball bilan\nbirinchi o'rinni egallagani uchun taqdirlandi."
-            d.text((width/2, height*0.65), desc_text, fill=(50, 50, 50), font=font_text, anchor="mm", align="center")
+            desc_text = f"«{topic}» testini muvaffaqiyatli yechib,\n1-o'rinni egallaganingiz uchun taqdim etiladi."
+            d.text((width/2, height*0.58), desc_text, fill=(26, 43, 76), font=font_text, anchor="mm", align="center")
             
-            # ID va Sana
-            import random
-            cert_id = f"ID: {random.randint(10000, 99999)}"
+            # Natija, Sana, O'rin
             import datetime
             date_str = datetime.datetime.now().strftime("%d.%m.%Y")
             
-            d.text((width*0.2, height*0.85), f"Tasdiqlandi\n{date_str}", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
-            d.text((width*0.82, height*0.85), f"Sertifikat\n{cert_id}", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
+            d.text((width*0.3, height*0.72), "NATIJA", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
+            d.text((width*0.3, height*0.77), f"{top_score_text}", fill=(212, 175, 55), font=font_text, anchor="mm", align="center")
+            
+            d.text((width*0.5, height*0.72), "SANA", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
+            d.text((width*0.5, height*0.77), f"{date_str}", fill=(212, 175, 55), font=font_text, anchor="mm", align="center")
+            
+            d.text((width*0.7, height*0.72), "O'RIN", fill=(26, 43, 76), font=font_small, anchor="mm", align="center")
+            d.text((width*0.7, height*0.77), "1-O'RIN", fill=(212, 175, 55), font=font_text, anchor="mm", align="center")
             
             bio = BytesIO()
             bio.name = 'sertifikat.jpg'
             img.save(bio, 'JPEG')
             bio.seek(0)
             
-            await context.bot.send_photo(chat_id=chat_id, photo=bio, caption=f"🏆 Boshqalar uchun ham zo'r namuna, tabriklaymiz {top_user}!")
+            await context.bot.send_photo(chat_id=chat_id, message_thread_id=thread_id, photo=bio, caption=f"🏆 Boshqalar uchun ham zo'r namuna, tabriklaymiz {top_user}!")
         except Exception as e:
             logger.error(f"Sertifikat yaratishda xatolik: {e}")
             
