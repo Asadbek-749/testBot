@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 async def start_test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Faqat adminlar sinovni boshlashi mumkin
-    if update.effective_user.id not in ADMIN_IDS:
+    if not db.is_admin(update.effective_user.id):
         await update.message.reply_text("Sizda bu buyruqni ishlatish uchun ruxsat yo'q. Faqatgina adminlar testni boshlay oladi.")
         return
 
@@ -41,7 +41,7 @@ async def topic_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     
     # Faqat admin bosa oladimi yoki ixtiyoriy kishimi? Faqat admin test boshlay olishini ta'minlash uchun:
-    if query.from_user.id not in ADMIN_IDS:
+    if not db.is_admin(query.from_user.id):
         await query.answer("Sizda test boshlash uchun ruxsat yo'q.", show_alert=True)
         return
         

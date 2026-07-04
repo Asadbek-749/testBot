@@ -87,6 +87,11 @@ def init_db():
                 correct_option INTEGER NOT NULL
             )
         ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS admins (
+                user_id INTEGER PRIMARY KEY
+            )
+        ''')
         
     conn.commit()
     conn.close()
@@ -227,3 +232,31 @@ def get_chat_rating(chat_id, topic=None):
     res = cursor.fetchall()
     conn.close()
     return res
+
+def is_admin(user_id):
+    from config import ADMIN_IDS
+    if user_id in ADMIN_IDS:
+        return True
+    conn = get_connection()
+    c = conn.cursor()
+    _execute(c, "SELECT user_id FROM admins WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return bool(row)
+
+def add_admin(user_id):
+    conn = get_connection()
+    c = conn.cursor()
+    if DATABASE_URL:
+        c.execute("INSERT INTO admins (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING", (user_id,))
+    else:
+        c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
+    conn.commit()
+    conn.close()
+
+def remove_admin(user_id):
+    conn = get_connection()
+    c = conn.cursor()
+    _execute(c, "DELETE FROM admins WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
