@@ -141,11 +141,3 @@ async def poll_answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Natijani saqlaymiz
     db.update_user_result(chat_id, user.id, user.first_name or user.username or "User", topic, is_correct)
-    
-    # Ekranga (guruhga) effekt / reaksiya yozish:
-    if is_correct:
-        text = f"✅ Barakalla, {user.first_name}! To'g'ri topdingiz! 🎉"
-    else:
-        text = f"❌ Afsus, {user.first_name}... Noto'g'ri javob berdingiz."
-        
-    await context.bot.send_message(chat_id=chat_id, text=text)
