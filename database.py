@@ -1,0 +1,191 @@
+import sqlite3
+import os
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "testbot.db")
+
+def get_connection():
+    return sqlite3.connect(DB_PATH)
+
+def init_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Savollar jadvali
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            option1 TEXT NOT NULL,
+            option2 TEXT NOT NULL,
+            option3 TEXT NOT NULL,
+            correct_option INTEGER NOT NULL,
+            topic TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Natijalar jadvali
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            username TEXT,
+            topic TEXT NOT NULL,
+            correct_count INTEGER DEFAULT 0,
+            total_count INTEGER DEFAULT 0,
+            last_test_date TIMESTAMP,
+            UNIQUE(chat_id, user_id, topic)
+        )
+    ''')
+
+    # Faol so'rovnomalar (poll) jadvali
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS active_polls (
+            poll_id TEXT PRIMARY KEY,
+            chat_id INTEGER NOT NULL,
+            question_id INTEGER NOT NULL,
+            correct_option INTEGER NOT NULL
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+def add_question(text, opt1, opt2, opt3, correct_idx, topic):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO questions (text, option1, option2, option3, correct_option, topic)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (text, opt1, opt2, opt3, correct_idx, topic))
+    conn.commit()
+    conn.close()
+
+def get_all_questions():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, text, topic FROM questions ORDER BY id DESC')
+    res = cursor.fetchall()
+    conn.close()
+    return res
+
+def delete_question(q_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM questions WHERE id = ?', (q_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+def get_topics():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT topic FROM questions WHERE topic IS NOT NULL')
+    res = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return res
+
+def get_questions_by_topic(topic):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, text, option1, option2, option3, correct_option FROM questions WHERE topic = ?', (topic,))
+    res = cursor.fetchall()
+    conn.close()
+    return res
+
+def add_active_poll(poll_id, chat_id, question_id, correct_option):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO active_polls (poll_id, chat_id, question_id, correct_option)
+        VALUES (?, ?, ?, ?)
+    ''', (poll_id, chat_id, question_id, correct_option))
+    conn.commit()
+    conn.close()
+
+def get_active_poll(poll_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT chat_id, question_id, correct_option FROM active_polls WHERE poll_id = ?', (poll_id,))
+    res = cursor.fetchone()
+    conn.close()
+    return res
+
+def remove_active_poll(poll_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM active_polls WHERE poll_id = ?', (poll_id,))
+    conn.commit()
+    conn.close()
+
+def update_user_result(chat_id, user_id, username, topic, is_correct):
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Avval mavjudligini tekshiramiz
+    cursor.execute('''
+        SELECT correct_count, total_count FROM results
+        WHERE chat_id = ? AND user_id = ? AND topic = ?
+    ''', (chat_id, user_id, topic))
+    row = cursor.fetchone()
+    
+    if row:
+        correct_count = row[0] + (1 if is_correct else 0)
+        total_count = row[1] + 1
+        cursor.execute('''
+            UPDATE results
+            SET correct_count = ?, total_count = ?, username = ?, last_test_date = CURRENT_TIMESTAMP
+            WHERE chat_id = ? AND user_id = ? AND topic = ?
+        ''', (correct_count, total_count, username, chat_id, user_id, topic))
+    else:
+        correct_count = 1 if is_correct else 0
+        total_count = 1
+        cursor.execute('''
+            INSERT INTO results (chat_id, user_id, username, topic, correct_count, total_count, last_test_date)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (chat_id, user_id, username, topic, correct_count, total_count))
+        
+    conn.commit()
+    conn.close()
+
+def get_user_stats(user_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT topic, SUM(correct_count), SUM(total_count)
+        FROM results
+        WHERE user_id = ?
+        GROUP BY topic
+    ''', (user_id,))
+    res = cursor.fetchall()
+    conn.close()
+    return res
+
+def get_chat_rating(chat_id, topic=None):
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    if topic:
+        cursor.execute('''
+            SELECT username, correct_count, total_count
+            FROM results
+            WHERE chat_id = ? AND topic = ?
+            ORDER BY correct_count DESC, total_count ASC
+            LIMIT 10
+        ''', (chat_id, topic))
+    else:
+        # Umumiy reyting
+        cursor.execute('''
+            SELECT username, SUM(correct_count) as c, SUM(total_count) as t
+            FROM results
+            WHERE chat_id = ?
+            GROUP BY user_id
+            ORDER BY c DESC, t ASC
+            LIMIT 10
+        ''', (chat_id,))
+    
+    res = cursor.fetchall()
+    conn.close()
+    return res
