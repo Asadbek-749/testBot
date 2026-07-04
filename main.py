@@ -14,6 +14,14 @@ from handlers.stats import mystats, rating, rating_callback
 async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ping! Bot yangilangan va ishlamoqda. (Versiya: 3.0)")
 
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_chat:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Global xato ushlandi: {str(context.error)}"
+        )
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -53,6 +61,7 @@ def main():
     application.add_handler(CallbackQueryHandler(rating_callback, pattern="^rating_"))
 
     logger.info("Bot ishga tushmoqda...")
+    application.add_error_handler(global_error_handler)
     application.run_polling()
 
 if __name__ == '__main__':
