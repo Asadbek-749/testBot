@@ -40,38 +40,25 @@ async def start_test_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def topic_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
-        
-        # Boshqa callbacklarni chetlab o'tish (masalan rating_)
-        if not query.data.startswith("topic_"):
-            return
-            
-        # Tugma bosilganini darhol foydalanuvchiga xabar beramiz
-        await context.bot.send_message(chat_id=query.message.chat_id, text="DEBUG: Tugma bosilgani aniqlandi! Kod ishlamoqda...")
-        
-        # Faqat admin bosa oladimi yoki ixtiyoriy kishimi?
-        if not db.is_admin(query.from_user.id):
-            await query.answer("Sizda test boshlash uchun ruxsat yo'q.", show_alert=True)
-            return
-            
         await query.answer()
         
-        data = query.data
-        if data.startswith("topic_"):
-            topic = data.replace("topic_", "", 1)
+        if not query.data or not query.data.startswith("topic_"):
+            return
             
-            # 5 soniya sanash
-            await query.edit_message_text(f"'{topic}' mavzusi tanlandi.\nTest boshlanishiga: 5 soniya...")
-            for i in range(4, 0, -1):
-                await asyncio.sleep(1)
-                await query.edit_message_text(f"'{topic}' mavzusi tanlandi.\nTest boshlanishiga: {i} soniya...")
-            await asyncio.sleep(1)
-            await query.edit_message_text(f"'{topic}' mavzusi bo'yicha test boshlandi! Omad!")
-            
-            thread_id = query.message.message_thread_id
-            await start_test_for_topic(query.message.chat_id, topic, context, thread_id)
+        topic = query.data.replace("topic_", "", 1)
+        
+        chat_id = query.message.chat.id if query.message else update.effective_chat.id
+        thread_id = getattr(query.message, 'message_thread_id', None) if query.message else None
+        
+        await query.edit_message_text(f"'{topic}' mavzusi tanlandi. Test boshlanmoqda...")
+        
+        await start_test_for_topic(chat_id, topic, context, thread_id)
+        
     except Exception as e:
-        if update.callback_query and update.callback_query.message:
-            await context.bot.send_message(chat_id=update.callback_query.message.chat_id, text=f"FULL Callback Xato: {str(e)}")
+        import traceback
+        err_text = f"Callback Xato:\n{traceback.format_exc()}"
+        if update.effective_chat:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=err_text[:4000])
 
 async def start_test_for_topic(chat_id, topic, context: ContextTypes.DEFAULT_TYPE, thread_id=None):
     questions = db.get_questions_by_topic(topic)
