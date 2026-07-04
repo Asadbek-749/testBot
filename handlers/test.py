@@ -41,6 +41,9 @@ async def topic_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
         
+        # Tugma bosilganini darhol foydalanuvchiga xabar beramiz
+        await context.bot.send_message(chat_id=query.message.chat_id, text="DEBUG: Tugma bosilgani aniqlandi! Kod ishlamoqda...")
+        
         # Faqat admin bosa oladimi yoki ixtiyoriy kishimi?
         if not db.is_admin(query.from_user.id):
             await query.answer("Sizda test boshlash uchun ruxsat yo'q.", show_alert=True)
