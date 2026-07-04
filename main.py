@@ -1,9 +1,9 @@
 import logging
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, PollAnswerHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, PollAnswerHandler, MessageHandler, filters
 from config import BOT_TOKEN
 import database as db
 
-from handlers.admin import add_question_handler, list_questions, delete_question
+from handlers.admin import add_question_handler, list_questions, delete_question, import_excel
 from handlers.test import start_test_command, topic_callback, poll_answer_handler
 from handlers.stats import mystats, rating, rating_callback
 
@@ -28,6 +28,7 @@ def main():
     application.add_handler(add_question_handler)
     application.add_handler(CommandHandler('list_questions', list_questions))
     application.add_handler(CommandHandler('delete_question', delete_question))
+    application.add_handler(MessageHandler(filters.Document.ALL, import_excel))
 
     # Test buyruqlari
     application.add_handler(CommandHandler('test', start_test_command))

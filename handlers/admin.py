@@ -3,6 +3,8 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters, ConversationHandler
 from config import ADMIN_IDS
 import database as db
+import openpyxl
+from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +126,49 @@ async def delete_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"ID {q_id} bo'lgan savol o'chirildi.")
     else:
         await update.message.reply_text("Bunday ID ga ega savol topilmadi.")
+
+async def import_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_admin(update):
+        return
+        
+    document = update.message.document
+    if not document.file_name.endswith('.xlsx'):
+        await update.message.reply_text("Iltimos, faqat .xlsx (Excel) formatidagi fayl yuklang.")
+        return
+        
+    await update.message.reply_text("Fayl qabul qilindi. Yuklanmoqda...")
+    
+    file = await context.bot.get_file(document.file_id)
+    file_bytes = await file.download_as_bytearray()
+    
+    try:
+        wb = openpyxl.load_workbook(BytesIO(file_bytes))
+        sheet = wb.active
+        
+        count = 0
+        # 1-qatorni sarlavha deb hisoblaymiz, 2-qatordan o'qiymiz
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if not row or not row[0]:
+                continue
+                
+            # Ustunlar: Savol, Opt1, Opt2, Opt3, Correct(1,2,3), Topic
+            if len(row) >= 6:
+                q_text, opt1, opt2, opt3, correct_val, topic = row[:6]
+                
+                try:
+                    correct_idx = int(correct_val) - 1
+                    if correct_idx not in [0, 1, 2]:
+                        continue
+                    db.add_question(str(q_text), str(opt1), str(opt2), str(opt3), correct_idx, str(topic))
+                    count += 1
+                except (ValueError, TypeError):
+                    continue
+                    
+        await update.message.reply_text(f"Muvaffaqiyatli! Jami {count} ta savol bazaga qo'shildi.")
+    except Exception as e:
+        logger.error(f"Excel o'qishda xatolik: {e}")
+        await update.message.reply_text("Faylni o'qishda xatolik yuz berdi. Fayl strukturasi to'g'riligini tekshiring.")
+
 
 add_question_handler = ConversationHandler(
     entry_points=[CommandHandler('add_question', add_question_start)],
