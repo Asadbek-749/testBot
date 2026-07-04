@@ -42,15 +42,17 @@ def init_db():
                 correct_count INTEGER DEFAULT 0,
                 total_count INTEGER DEFAULT 0,
                 last_test_date TIMESTAMP,
-                UNIQUE(chat_id, user_id, topic)
-            )
-        ''')
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS active_polls (
                 poll_id TEXT PRIMARY KEY,
                 chat_id BIGINT NOT NULL,
                 question_id INTEGER NOT NULL,
                 correct_option INTEGER NOT NULL
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS admins (
+                user_id BIGINT PRIMARY KEY
             )
         ''')
     else:
